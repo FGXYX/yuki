@@ -761,7 +761,7 @@ C:\Users\FG\AppData\Roaming\com.fg.yuki\yuki_data.db
 ```
 ## 🌍 环境信息
 - **操作系统**: Windows 11 (版本号)
-- **Yuki 版本**: v1.0.0
+- **Yuki 版本**: v1.0.1
 - **安装方式**: exe 安装包 / 源码编译
 
 ## 🐛 问题描述

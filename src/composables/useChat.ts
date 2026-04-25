@@ -214,24 +214,47 @@ export function useChat() {
         return { role: msg.role, content: contentToSent };
       });
 
-      const messages = [ { role: 'system', content: systemPrompt }, ...apiHistory ];
-
+const messages = [ { role: 'system', content: systemPrompt }, ...apiHistory ];
+      // 🌟 [新增日志点]: 全方位透视发送给 AI 的数据
+      addLog('system', 'Prompt_Assembly', '--- 🚀 开始组装思维链数据 ---');
+      // 1. 打印系统提示词 (包含 Yuki 的人设和情绪指令)
+      addLog('info', 'System_Message', `系统提示词预览: ${systemPrompt}...`);
+      // 2. 打印当前生效的 Skill
+      if (activeSkills.length > 0) {
+        addLog('success', 'Skill_Active', `当前激活技能: ${activeSkills.map(s => s.name).join(', ')}`);
+      }
+      // 3. 打印本次用户输入的原始文本
+      addLog('info', 'User_Message', `当前用户消息: "${text}"`);
+      // 4. 打印上下文记忆深度
+      addLog('system', 'Context', `历史记忆深度: 已加载 ${apiHistory.length} 条相关上下文`);
+      // --- 原有的 LLM 日志 ---
       addLog('system', 'LLM', `Sending request to Engine: [${aiConfig.modelName}]...`);
 
       let endpoint = aiConfig.baseUrl.replace(/\/+$/, '') + '/chat/completions';
       
-      const requestBody: any = { 
+const requestBody: any = { 
         model: aiConfig.modelName, 
         messages: messages, 
-        temperature: temperature,
-        frequency_penalty: (tools && tools.length > 0) ? 0 : 0.6,
-        presence_penalty: (tools && tools.length > 0) ? 0 : 0.6,
-        stream: true 
+        // 🌟 1. 降低温度：让 AI 变得更严谨，更倾向于遵守“必须调用工具”的死命令
+        temperature: 0.5, 
+        
+        // 🌟 2. 提高重复惩罚：当有工具时，给到 0.7-0.8 的高惩罚
+        // 这会让 AI 觉得复读记忆里的旧 ID 和旧链接“非常痛苦”，从而逼迫它去寻找新的数据（调用工具）
+        frequency_penalty: (tools && tools.length > 0) ? 0.7 : 0.6,
+        
+        // 🌟 3. 提高存在惩罚：鼓励 AI 谈论它还没在当前对话中提到的新东西
+        presence_penalty: (tools && tools.length > 0) ? 0.6 : 0.6,
+        
+        stream: true,
+        stream_options: { "include_usage": true }   // 返回token统计
       };
       
       if (tools && tools.length > 0) {
         requestBody.tools = tools;
+        // 🌟 [新增日志点]: 记录 AI 可以使用的 MCP 工具数量
+        addLog('info', 'MCP_Tools', `AI 已连接 ${tools.length} 个本地 MCP 技能工具`);
       }
+      addLog('system', 'Network', `正在连接接口: ${endpoint}`);
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -253,7 +276,12 @@ export function useChat() {
       let toolCallName = '';
       let toolCallArgs = '';
 
-      const assistantMsg = { role: 'assistant', content: '', timestamp: Date.now() };
+      const assistantMsg = { 
+        role: 'assistant', 
+        content: '', 
+        timestamp: Date.now(),
+        usage: null as any // 🌟 新增：用于存储 Token 统计
+      };
       chatHistory.value = [...chatHistory.value, assistantMsg];
       bubbleMessage.value = ''; 
       isSpeaking.value = true;  
@@ -273,12 +301,25 @@ export function useChat() {
 
             try {
               const parsed = JSON.parse(line);
+
+              // 🌟 核心新增：捕获 Token 使用统计
+              if (parsed.usage) {
+                assistantMsg.usage = parsed.usage;
+                const { prompt_tokens, completion_tokens, total_tokens } = parsed.usage;
+                addLog('info', 'Token_Usage', `[消耗统计] 输入: ${prompt_tokens}, 输出: ${completion_tokens}, 总计: ${total_tokens}`);
+              }
+
               const delta = parsed.choices?.[0]?.delta || parsed.message || {};
               
               if (delta.tool_calls && delta.tool_calls.length > 0) {
                 isToolCall = true;
                 const tc = delta.tool_calls[0];
-                if (tc.function?.name) toolCallName += tc.function.name;
+                
+                if (tc.function?.name) {
+                  toolCallName += tc.function.name;
+                  // 记录 AI 的决策动作
+                  addLog('warning', 'AI_Decision', `决策完成：AI 决定调用外部工具 [${tc.function.name}]`);
+                }
                 if (tc.function?.arguments) toolCallArgs += tc.function.arguments;
                 
                 bubbleMessage.value = `⚙️ 正在施展技能：${toolCallName}...`;
@@ -334,6 +375,8 @@ export function useChat() {
 
         // 1. 执行本地插件（捕获结果或报错）
         try {
+          // 记录插件调用参数
+          addLog('info', 'MCP_Call', `正在将参数传给 Python 插件: ${toolCallArgs}`);
           const resultStr = await invoke<string>('execute_mcp_tool', {
             toolName: toolCallName,
             toolArgs: toolCallArgs,
@@ -342,21 +385,27 @@ export function useChat() {
           const mcpResult = JSON.parse(resultStr);
           resultMsg = mcpResult.result?.content?.[0]?.text || "执行成功！";
           isError = mcpResult.result?.isError || false;
+
+          // 记录插件返回的原始数据预览
+          
+          addLog('success', 'MCP_Return', `获取到原始数据:\n${resultMsg}`);
         } catch (mcpErr: any) {
           resultMsg = String(mcpErr);
           isError = true;
         }
 
-        // 2. 把执行结果作为“反馈”，再次发给大模型阅读
-        const toolFeedbackPrompt = `【系统状态反馈：工具 \`${toolCallName}\` 执行完毕】\n底层系统返回结果如下：\n\`\`\`\n${resultMsg}\n\`\`\`\n\n【最高指令】请你阅读上述底层结果，并用你的角色性格向主人汇报。如果看到报错信息，请向主人抱怨或说明情况；如果成功了，请开心邀功。注意：开头必须包含情绪标签（如 [happy], [sad], [angry] 等）。`;
+        const toolFeedbackPrompt = `【系统通知】工具 \`${toolCallName}\` 执行成功。\n\n${resultMsg}`;
         
-        messages.push({ role: 'assistant', content: `我已经调用了工具 ${toolCallName}，正在等待结果...` });
+        // 后续逻辑保持不变，messages.push 使用这个通用的 prompt
+        messages.push({ role: 'assistant', content: '' }); 
         messages.push({ role: 'user', content: toolFeedbackPrompt });
 
         bubbleMessage.value = '正在阅读执行结果...';
         currentEmotion.value = 'thinking';
 
-        // 🌟🌟🌟 修复点：把变量声明提升到 try 块的外面，解决作用域报错！ 🌟🌟🌟
+        // 🌟 [插入点 5]: 记录进入汇报轮
+        addLog('system', 'LLM_Feedback', `原始数据已同步，正在要求 AI 进行角色化汇报...`);
+
         let buffer2 = '';
         let isParsingEmotion2 = true;
         let tempEmotionBuffer2 = '';
@@ -393,6 +442,16 @@ export function useChat() {
                 line = line.replace(/^data:\s*/i, '').trim();
                 try {
                   const parsed = JSON.parse(line);
+
+                  // 🌟 核心新增：在第二个循环中也要捕获 Usage
+                  if (parsed.usage) {
+                    // 我们将第二次对话的消耗覆盖到 assistantMsg.usage
+                    // 这样最终保存到数据库的是包含了插件调用反馈的完整消耗数据
+                    assistantMsg.usage = parsed.usage;
+                    const { prompt_tokens, completion_tokens, total_tokens } = parsed.usage;
+                    addLog('info', 'Token_Usage', `[反馈轮] 输入: ${prompt_tokens}, 输出: ${completion_tokens}, 总计: ${total_tokens}`);
+                  }
+
                   const token = parsed.choices?.[0]?.delta?.content || parsed.message?.content || '';
                   if (token) {
                     if (isParsingEmotion2) {
@@ -440,11 +499,16 @@ export function useChat() {
 
         // 4. 彻底完成：保存真正的 AI 回复并上屏
         triggerRef(chatHistory);
+        const pixivRegex = /(https:\/\/pixiv\.re\/\d+\.(jpg|gif))/g; // 🌟 必须包含 gif
+        if (assistantMsg.content.includes('https://pixiv.re/') && !assistantMsg.content.includes('![')) {
+          assistantMsg.content = assistantMsg.content.replace(pixivRegex, "![Pixiv图]($1)");
+          bubbleMessage.value = assistantMsg.content;
+        }
         await insertMessage('assistant', assistantMsg.content, activeSessionId);
         await emit('yuki-history-updated'); 
         if (sentenceBuffer.trim() && !isParsingEmotion2) speakSentence(sentenceBuffer, currentEmotion.value);
         
-        const displayTime = Math.max(4000, assistantMsg.content.length * 150);
+        const displayTime = Math.max(4000, assistantMsg.content.length * 30);
         triggerSpeechBubble(assistantMsg.content, displayTime);
         setTimeout(() => { currentEmotion.value = 'normal'; }, displayTime);
         
@@ -461,11 +525,17 @@ export function useChat() {
 
       if (!isToolCall) {
         addLog('info', 'LLM_Raw', `Raw Output: \n${rawResponseBuffer}`);
+        const pixivRegex = /(https:\/\/pixiv\.re\/\d+\.(jpg|gif)|data:image\/gif;base64,[A-Za-z0-9+/=]+)/g;
+
+        if (assistantMsg.content.includes('链接:') && !assistantMsg.content.includes('![')) {
+          assistantMsg.content = assistantMsg.content.replace(pixivRegex, "![Pixiv图]($1)");
+          bubbleMessage.value = assistantMsg.content;
+        }
         await insertMessage('assistant', assistantMsg.content, activeSessionId);
         await emit('yuki-history-updated'); 
         if (sentenceBuffer.trim() && !isParsingEmotion) speakSentence(sentenceBuffer, currentEmotion.value);
         
-        const displayTime = Math.max(3000, assistantMsg.content.length * 150);
+        const displayTime = Math.max(3000, assistantMsg.content.length * 30);
         triggerSpeechBubble(assistantMsg.content, displayTime);
         setTimeout(() => { currentEmotion.value = 'normal'; }, displayTime);
       }

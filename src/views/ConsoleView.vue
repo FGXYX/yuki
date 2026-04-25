@@ -6,6 +6,10 @@ const { logs, clearLogs, addLog, initConsoleListener } = useConsole();
 const terminalRef = ref<HTMLElement | null>(null);
 const isAutoScroll = ref(true);
 
+// 🌟 新增：当前激活的过滤器
+const allLevels = ['info', 'success', 'warning', 'error', 'system'];
+const activeFilters = ref([...allLevels]);
+
 // ==========================================
 // 🌟 1. 控制台专属主题管理系统
 // ==========================================
@@ -69,6 +73,25 @@ watch(logs, () => {
   }
 }, { deep: true });
 
+// 🌟 新增：切换过滤器的函数
+const toggleFilter = (level: string) => {
+  const index = activeFilters.value.indexOf(level);
+  if (index > -1) {
+    // 如果已经在里面，就删掉（隐藏）
+    if (activeFilters.value.length > 1) { // 至少保留一个，防止全空
+      activeFilters.value.splice(index, 1);
+    }
+  } else {
+    // 如果不在，就加上（显示）
+    activeFilters.value.push(level);
+  }
+};
+
+// 🌟 关键：计算过滤后的日志列表
+const filteredLogs = computed(() => {
+  return logs.value.filter(log => activeFilters.value.includes(log.level));
+});
+
 onMounted(async () => {
   // 加载本地保存的主题
   const savedTheme = localStorage.getItem('yuki_console_theme');
@@ -88,8 +111,17 @@ onMounted(async () => {
   <div class="console-container" :style="themeVars">
     <header class="console-header">
       <div class="header-left">
-        <span class="status-dot blinking"></span>
-        <h2 class="title">Yuki_OS :: Developer_Console</h2>
+        <h2 class="title">Yuki Console</h2>
+        <div class="filter-chips">
+          <button 
+            v-for="level in allLevels" 
+            :key="level"
+            :class="['chip', `chip-${level}`, { 'inactive': !activeFilters.includes(level) }]"
+            @click="toggleFilter(level)"
+                >
+            {{ level.toUpperCase() }}
+          </button>
+        </div>
       </div>
       <div class="header-right">
         <button class="action-btn config-btn" @click="isSettingsOpen = !isSettingsOpen" :class="{ 'active': isSettingsOpen }">
@@ -103,17 +135,13 @@ onMounted(async () => {
       </div>
     </header>
 
-    <main class="terminal-body" ref="terminalRef">
-      <div v-if="logs.length === 0" class="empty-state">
-        [ NO DATA IN BUFFER ]
-      </div>
-      
-      <div v-for="log in logs" :key="log.id" :class="['log-row', `level-${log.level}`]">
-        <span class="log-time">[{{ log.time }}]</span>
-        <span class="log-source">&lt;{{ log.source }}&gt;</span>
-        <span class="log-message">{{ log.message }}</span>
-      </div>
-    </main>
+      <main class="terminal-body" ref="terminalRef">
+        <div v-for="log in filteredLogs" :key="log.id" :class="['log-row', `level-${log.level}`]">
+          <span class="log-time">[{{ log.time }}]</span>
+          <span class="log-source">&lt;{{ log.source }}&gt;</span>
+          <span class="log-message">{{ log.message }}</span>
+        </div>
+      </main>
 
     <transition name="fade-slide">
       <div v-if="isSettingsOpen" class="settings-drawer">
@@ -300,4 +328,43 @@ onMounted(async () => {
 /* 动画 */
 .fade-slide-enter-active, .fade-slide-leave-active { transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
 .fade-slide-enter-from, .fade-slide-leave-to { opacity: 0; transform: translateY(-10px) scale(0.98); }
+
+/* =======================================
+   过滤器样式
+   ======================================= */
+.filter-chips {
+  display: flex;
+  gap: 6px;
+  margin-left: 20px;
+}
+
+.chip {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: bold;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+  background: rgba(255, 255, 255, 0.05);
+  color: #888;
+}
+
+/* 激活状态使用主题色 */
+.chip-info:not(.inactive)    { color: var(--color-info);    border-color: var(--color-info);    background: rgba(139, 233, 253, 0.1); }
+.chip-success:not(.inactive) { color: var(--color-success); border-color: var(--color-success); background: rgba(80, 250, 123, 0.1); }
+.chip-warning:not(.inactive) { color: var(--color-warning); border-color: var(--color-warning); background: rgba(241, 250, 140, 0.1); }
+.chip-error:not(.inactive)   { color: var(--color-error);   border-color: var(--color-error);   background: rgba(255, 85, 85, 0.1); }
+.chip-system:not(.inactive)  { color: var(--color-system);  border-color: var(--color-system);  background: rgba(189, 147, 249, 0.1); }
+
+/* 未激活状态 */
+.chip.inactive {
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+
+.chip:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.2);
+}
 </style>

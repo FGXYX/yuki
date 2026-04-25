@@ -955,7 +955,7 @@ onMounted(async () => {
           <div class="about-header">
             <div class="about-logo">❄️</div>
             <h2 class="about-title">Yuki</h2>
-            <span class="about-version">Version 1.0.0 (Beta)</span>
+            <span class="about-version">Version 1.0.1 (Beta)</span>
           </div>
 
           <p class="about-desc">

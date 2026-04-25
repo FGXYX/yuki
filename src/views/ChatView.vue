@@ -17,10 +17,6 @@ import { useTTS } from '@/composables/useTTS';
 import { open } from '@tauri-apps/plugin-dialog';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
-//mcp测试
-import { invoke } from '@tauri-apps/api/core';
-
-
 // ============================================================================
 // 2. 静态资源与常量 (Constants)
 // ============================================================================
@@ -62,12 +58,18 @@ const chatTheme = ref({
   msgGap: 4,
   // 侧边栏
   sidebarWidth: 220,
+  sidebarOpacity: 0.8, // 🌟 新增：侧边栏透明度 (0.1 ~ 1.0)
+  sidebarBlur: true,    // 🌟 新增：侧边栏毛玻璃开关
   // 输入框
   inputRadius: 20,
+  inputOpacity: 0.8,   // 🌟 新增：输入框透明度
+  inputBlur: true,     // 🌟 新增：输入框毛玻璃开关
   // 背景
   bgColor: '#141517', bgImage: '', bgSize: 'cover', bgPosition: 'center', bgBlur: 0, bgOpacity: 0.15,
   // 顶栏
-  headerBg: 'auto', headerBgColor: '#141517', headerBlur: true,
+  headerBg: 'auto', headerBgColor: '#141517',headerOpacity: 0.8, headerBlur: true,
+
+  
 });
 const isSkillPanelOpen = ref(false); // 控制 Skill 面板显示
 
@@ -375,25 +377,6 @@ const sendMessage = async () => {
   scrollToBottom();
 };
 
-// 🌟 临时改装：用来测试“执行工具”
-const runMCPTest = async () => {
-  try {
-    console.log("🚀 开始测试让 Rust 执行 MCP 技能...");
-    
-    // 调用我们刚在 Rust 写的执行函数
-    const result = await invoke('execute_mcp_tool', { 
-      toolName: "create_entities", 
-      // 注意：这里传的是 JSON 格式的字符串
-      toolArgs: `{"entities":[{"name": "主人", "entityType": "用户", "observations": ["今天晚上我成功接入了 MCP"]}]}`
-    });
-    
-    console.log("🎉 执行结果:", JSON.parse(result as string));
-    alert("执行成功！请看控制台！");
-  } catch (err) {
-    console.error("❌ 执行失败：", err);
-    alert("执行失败，报错：" + err);
-  }
-};
 
 // 选择本地图片/视频的逻辑
 const handleAttachMedia = async () => {
@@ -432,7 +415,7 @@ const handleAttachMedia = async () => {
 
 const loadChatTheme = async () => { const saved = await ConfigStore.get<any>('yuki_chat_theme', null); if (saved) chatTheme.value = { ...chatTheme.value, ...saved }; };
 const saveChatTheme = async () => { await ConfigStore.set('yuki_chat_theme', chatTheme.value); };
-const resetChatTheme = () => { chatTheme.value = { fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: 15, lineHeight: 1.5, textColor: '#ececec', panelTextColor: '#ececec', sidebarTextColor: '#ececec', aiTextColor: '#ececec', userTextColor: '#ffffff', bubbleRadius: 16, aiBgColor: '#242528', userBgColor: '#4facfe', aiBubbleOpacity: 1.0, userBubbleOpacity: 1.0, bubbleShadow: true, msgGap: 4, sidebarWidth: 220, inputRadius: 20, bgColor: '#141517', bgImage: '', bgSize: 'cover', bgPosition: 'center', bgBlur: 0, bgOpacity: 0.15, headerBg: 'auto', headerBgColor: '#141517', headerBlur: true }; saveChatTheme(); };
+const resetChatTheme = () => { chatTheme.value = { fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: 15, lineHeight: 1.5, textColor: '#ececec', panelTextColor: '#ececec', sidebarTextColor: '#ececec', aiTextColor: '#ececec', userTextColor: '#ffffff', bubbleRadius: 16, aiBgColor: '#242528', userBgColor: '#4facfe', aiBubbleOpacity: 1.0, userBubbleOpacity: 1.0, bubbleShadow: true, msgGap: 4, sidebarWidth: 220, inputRadius: 20, bgColor: '#141517', bgImage: '', bgSize: 'cover', bgPosition: 'center', bgBlur: 0, bgOpacity: 0.15, headerBg: 'auto', headerBgColor: '#141517', headerBlur: true, sidebarOpacity: 0.8, sidebarBlur: true, inputOpacity: 0.8, inputBlur: true, headerOpacity: 0.8}; saveChatTheme(); };
 const triggerUpload = () => { if (fileInputRef.value) fileInputRef.value.click(); };
 const handleImageUpload = (event: Event) => {
   const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return;
@@ -472,13 +455,16 @@ onUnmounted(() => {
     '--sidebar-text-color': chatTheme.sidebarTextColor,
     '--ai-text-color': chatTheme.aiTextColor,
     '--user-text-color': chatTheme.userTextColor,
-    /* 👇 新增这两行，把透明度转化为百分比变量供底色混合使用 */
     '--ai-opacity': Math.round(chatTheme.aiBubbleOpacity * 100) + '%',
     '--user-opacity': Math.round(chatTheme.userBubbleOpacity * 100) + '%',
-    /* 👆 新增结束 */
     '--bubble-radius': chatTheme.bubbleRadius + 'px', '--bg-size': chatTheme.bgSize, '--bg-position': chatTheme.bgPosition,
     '--sidebar-width': chatTheme.sidebarWidth + 'px', '--input-radius': chatTheme.inputRadius + 'px',
     '--msg-gap': chatTheme.msgGap + 'px',
+    '--sidebar-opacity': Math.round(chatTheme.sidebarOpacity * 100) + '%',
+    '--sidebar-blur': chatTheme.sidebarBlur ? 'blur(16px)' : 'none',
+    '--input-opacity': Math.round(chatTheme.inputOpacity * 100) + '%',
+    '--input-blur': chatTheme.inputBlur ? 'blur(12px)' : 'none',
+    '--header-opacity': Math.round(chatTheme.headerOpacity * 100) + '%',
   }">
     
     <!-- 背景层 -->
@@ -536,7 +522,7 @@ onUnmounted(() => {
       <main class="main-content">
 
         <!-- 顶部导航栏 -->
-        <header class="chat-header" :style="chatTheme.headerBg === 'custom' ? { background: chatTheme.headerBgColor + 'cc' } : {}">
+        <header class="chat-header" :class="{ 'has-custom-bg': chatTheme.headerBg === 'custom' }">
           <div class="header-left">
             <button class="toggle-sidebar-btn" @click="isSidebarOpen = !isSidebarOpen">
               <span class="icon-wrap" v-html="UI_MENU"></span>
@@ -565,7 +551,6 @@ onUnmounted(() => {
           
           <!-- 空状态 -->
           <div v-if="chatHistory.length === 0" class="empty-state">
-            <div class="empty-avatar">Y</div>
             <p class="empty-name">Yuki</p>
             <p class="empty-tip">这是崭新的对话篇章，快来聊聊吧！</p>
           </div>
@@ -646,10 +631,6 @@ onUnmounted(() => {
                 <span class="icon-wrap" v-html="UI_ATTACH"></span>
               </button>
               
-              <button class="send-btn mcp-test-btn" @click="runMCPTest" title="测试 MCP 通信">
-                🧪
-              </button>
-
               <button v-if="isPlayingTTS" class="send-btn stop-tts-btn" @click="stopTTS" title="打断说话">
                 🛑
               </button>
@@ -663,8 +644,7 @@ onUnmounted(() => {
       </main>
     </div>
 
-    <!-- ===== 主题设置弹窗 ===== -->
-    <Teleport to="body">
+<Teleport to="body">
     <div v-if="isThemePanelOpen" class="theme-overlay" @click.self="isThemePanelOpen = false"
          :style="{
            '--chat-bg': chatTheme.bgColor,
@@ -683,9 +663,8 @@ onUnmounted(() => {
         
         <div class="panel-body">
 
-          <!-- ── 字体与排版 ── -->
           <div class="setting-group">
-            <div class="group-title">📝 字体与排版</div>
+            <div class="group-title"> 字体与排版</div>
             <div class="setting-item">
               <label>字体风格</label>
               <select v-model="chatTheme.fontFamily" @change="saveChatTheme" class="theme-select">
@@ -708,9 +687,8 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- ── 消息气泡 ── -->
           <div class="setting-group">
-            <div class="group-title">💬 消息气泡</div>
+            <div class="group-title"> 消息气泡</div>
             <div class="setting-item">
               <div class="setting-label-row"><label>气泡圆角</label><span class="setting-val">{{ chatTheme.bubbleRadius }} px</span></div>
               <input type="range" v-model.number="chatTheme.bubbleRadius" min="0" max="30" @change="saveChatTheme">
@@ -739,23 +717,52 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- ── 头像与布局 ── -->
           <div class="setting-group">
-            <div class="group-title">布局</div>
+            <div class="group-title"> 侧边栏布局</div>
+            <div class="setting-item-color"><label>侧边栏文字颜色</label><input type="color" v-model="chatTheme.sidebarTextColor" @change="saveChatTheme"></div>
             <div class="setting-item">
-              <div class="setting-item-color"><label>侧边栏文字颜色</label><input type="color" v-model="chatTheme.sidebarTextColor" @change="saveChatTheme"></div>
               <div class="setting-label-row"><label>侧边栏宽度</label><span class="setting-val">{{ chatTheme.sidebarWidth }} px</span></div>
               <input type="range" v-model.number="chatTheme.sidebarWidth" min="160" max="320" @change="saveChatTheme">
             </div>
             <div class="setting-item">
-              <div class="setting-label-row"><label>输入框圆角</label><span class="setting-val">{{ chatTheme.inputRadius }} px</span></div>
-              <input type="range" v-model.number="chatTheme.inputRadius" min="4" max="28" @change="saveChatTheme">
+              <div class="setting-label-row">
+                <label>侧边栏透明度</label>
+                <span class="setting-val">{{ Math.round(chatTheme.sidebarOpacity * 100) }}%</span>
+              </div>
+              <input type="range" v-model.number="chatTheme.sidebarOpacity" min="0.1" max="1" step="0.05" @change="saveChatTheme">
+            </div>
+            <div class="setting-item-toggle">
+              <label>侧边栏毛玻璃模糊</label>
+              <button class="toggle-btn" :class="{ 'on': chatTheme.sidebarBlur }" @click="chatTheme.sidebarBlur = !chatTheme.sidebarBlur; saveChatTheme()">
+                <span class="toggle-knob"></span>
+              </button>
             </div>
           </div>
 
-          <!-- ── 顶部导航栏 ── -->
           <div class="setting-group">
-            <div class="group-title">🔝 顶部导航栏</div>
+            <div class="group-title"> 底部输入区</div>
+            <div class="setting-item">
+              <div class="setting-label-row"><label>输入框圆角</label><span class="setting-val">{{ chatTheme.inputRadius }} px</span></div>
+              <input type="range" v-model.number="chatTheme.inputRadius" min="4" max="28" @change="saveChatTheme">
+            </div>
+            <div class="setting-item">
+              <div class="setting-label-row">
+                <label>对话框透明度</label>
+                <span class="setting-val">{{ Math.round(chatTheme.inputOpacity * 100) }}%</span>
+              </div>
+              <input type="range" v-model.number="chatTheme.inputOpacity" min="0.1" max="1" step="0.05" @change="saveChatTheme">
+            </div>
+            <div class="setting-item-toggle">
+              <label>对话框毛玻璃模糊</label>
+              <button class="toggle-btn" :class="{ 'on': chatTheme.inputBlur }" @click="chatTheme.inputBlur = !chatTheme.inputBlur; saveChatTheme()">
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="group-title"> 顶部导航栏</div>
+            
             <div class="setting-item">
               <label>背景模式</label>
               <select v-model="chatTheme.headerBg" @change="saveChatTheme" class="theme-select">
@@ -763,10 +770,20 @@ onUnmounted(() => {
                 <option value="custom">自定义颜色</option>
               </select>
             </div>
+
             <div class="setting-item-color" v-if="chatTheme.headerBg === 'custom'">
               <label>顶栏自定义颜色</label>
               <input type="color" v-model="chatTheme.headerBgColor" @change="saveChatTheme">
             </div>
+
+            <div class="setting-item">
+              <div class="setting-label-row">
+                <label>顶栏透明度</label>
+                <span class="setting-val">{{ Math.round(chatTheme.headerOpacity * 100) }}%</span>
+              </div>
+              <input type="range" v-model.number="chatTheme.headerOpacity" min="0.1" max="1" step="0.05" @change="saveChatTheme">
+            </div>
+
             <div class="setting-item-toggle">
               <label>毛玻璃模糊效果</label>
               <button class="toggle-btn" :class="{ 'on': chatTheme.headerBlur }" @click="chatTheme.headerBlur = !chatTheme.headerBlur; saveChatTheme()">
@@ -775,9 +792,8 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- ── 背景空间 ── -->
           <div class="setting-group">
-            <div class="group-title">🖼️ 背景空间</div>
+            <div class="group-title"> 背景空间</div>
             <div class="setting-item-color"><label>底色</label><input type="color" v-model="chatTheme.bgColor" @change="saveChatTheme"></div>
             <div class="setting-item">
               <label>背景图片 (支持本地或网络)</label>
@@ -785,7 +801,7 @@ onUnmounted(() => {
                 <input type="file" ref="fileInputRef" accept="image/*" class="hidden-input" @change="handleImageUpload">
                 <button class="upload-btn" @click="triggerUpload">📂 本地</button>
                 <div v-if="chatTheme.bgImage && chatTheme.bgImage.startsWith('data:image')" class="local-img-badge">
-                  <span class="badge-text">🌄 已应用本地图片</span>
+                  <span class="badge-text"> 已应用本地图片</span>
                   <button class="badge-close" @click="clearLocalImage">×</button>
                 </div>
                 <input v-else type="text" class="theme-input url-input" placeholder="或输入 http 链接..." v-model="chatTheme.bgImage" @change="saveChatTheme">
@@ -823,6 +839,7 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+    </Teleport>
 
     <Teleport to="body">
     <div v-if="isMcpPanelOpen" class="theme-overlay" @click.self="isMcpPanelOpen = false"
@@ -954,8 +971,6 @@ onUnmounted(() => {
     </div>
 
     </Teleport>
-
-    </Teleport>
   <transition name="fade">
       <div v-if="previewImageUrl" class="image-preview-overlay" @click="closePreview">
         <button class="preview-close-btn" @click="closePreview">✕</button>
@@ -1006,8 +1021,9 @@ onUnmounted(() => {
    ==================================================== */
 .sidebar {
   width: var(--sidebar-width);
-  background: color-mix(in srgb, var(--chat-bg) 94%, #000);
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--chat-bg) var(--sidebar-opacity, 90%), transparent) !important;
+  backdrop-filter: var(--sidebar-blur);
+  -webkit-backdrop-filter: var(--sidebar-blur);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -1154,12 +1170,16 @@ onUnmounted(() => {
   align-items: center;
   padding: 0 16px;
   height: 52px;
-  background: color-mix(in srgb, var(--chat-bg) 82%, transparent);
+  background: color-mix(in srgb, var(--chat-bg) var(--header-opacity, 82%), transparent) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   backdrop-filter: v-bind("chatTheme.headerBlur ? 'blur(16px)' : 'none'");
   -webkit-backdrop-filter: v-bind("chatTheme.headerBlur ? 'blur(16px)' : 'none'");
   z-index: 10;
   flex-shrink: 0;
+}
+/* 🌟 当用户选择自定义颜色时，覆盖背景变量 */
+.chat-header.has-custom-bg {
+  background: color-mix(in srgb, v-bind('chatTheme.headerBgColor') var(--header-opacity, 82%), transparent) !important;
 }
 .header-left { display: flex; align-items: center; gap: 6px; }
 .toggle-sidebar-btn {
@@ -1440,7 +1460,9 @@ onUnmounted(() => {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  background: color-mix(in srgb, var(--chat-bg) 88%, #fff 6%);
+  background: color-mix(in srgb, var(--chat-bg) var(--input-opacity, 85%), transparent) !important;
+  backdrop-filter: var(--input-blur);
+  -webkit-backdrop-filter: var(--input-blur);
   border-radius: var(--input-radius);
   padding: 7px 7px 7px 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1578,7 +1600,7 @@ textarea::placeholder { color: var(--text-color); opacity: 0.28; }
   border: 1px solid rgba(255,255,255,0.05);
 }
 .group-title {
-  font-size: 10.5px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--user-bg);
   text-transform: uppercase;
@@ -1716,14 +1738,6 @@ textarea::placeholder { color: var(--text-color); opacity: 0.28; }
 .badge-close:hover { transform: scale(1.2); }
 
 /* range slider */
-input[type=range] {
-  -webkit-appearance: none;
-  width: 100%;
-  background: rgba(255,255,255,0.1);
-  height: 4px;
-  border-radius: 2px;
-  outline: none;
-}
 input[type=range]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 14px;

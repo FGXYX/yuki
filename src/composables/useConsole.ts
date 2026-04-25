@@ -26,6 +26,8 @@ const originalLog = console.log;
 const originalWarn = console.warn;
 const originalError = console.error;
 
+const MAX_LOG_COUNT = 200;
+
 // ==========================================
 // 🌟 2. 实体日志缓冲池 (Buffer Pool)
 // ==========================================
@@ -102,7 +104,8 @@ export function useConsole() {
       const newLog = event.payload;
       if (!logs.value.some(l => l.id === newLog.id)) {
         logs.value = [...logs.value, newLog];
-        if (logs.value.length > 1000) logs.value.shift();
+        // 🌟 将 1000 改为 MAX_LOG_COUNT
+        if (logs.value.length > MAX_LOG_COUNT) logs.value.shift(); 
       }
     });
 
@@ -123,8 +126,7 @@ export function useConsole() {
 
     // 1. 存入内存和缓存
     logs.value = [...logs.value, newLog];
-    if (logs.value.length > 1000) logs.value.shift();
-    localStorage.setItem('yuki_developer_logs', JSON.stringify(logs.value));
+    if (logs.value.length > MAX_LOG_COUNT) logs.value.shift();
 
     // 🌟 2. 扔进缓冲池准备落盘
     logBuffer.push(newLog);
