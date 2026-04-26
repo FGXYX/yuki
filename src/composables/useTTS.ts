@@ -92,7 +92,15 @@ export function useTTS() {
     const task = audioQueue.value.shift();
     if (!task) { isPlayingTTS.value = false; return; }
     
-    let textToSpeak = task.text.replace(/```[\s\S]*?```/g, '').trim();
+    let textToSpeak = task.text
+      .replace(/```[\s\S]*?```/g, '')         // 1. 过滤代码块
+      .replace(/!\[.*?\]\(.*?\)/g, '')        // 2. 过滤 Markdown 图片格式 ![alt](url)
+      .replace(/\[.*?\]\(.*?\)/g, '')         // 3. 过滤 Markdown 链接格式 [text](url)
+      .replace(/(https?:\/\/[^\s]+)/g, '')    // 4. 过滤残留的纯 URL 链接
+      .replace(/[#*`~_]/g, '')                // 5. 过滤加粗、标题、斜体等特殊符号
+      .replace(/\[happy\]|\[sad\]|\[angry\]|\[shy\]|\[normal\]/g, '') // 6. 过滤掉情绪标签本身
+      .replace(/，/g, ' ')                    // 7. 滤掉中文逗号，换成空格，避免语音合成时的停顿
+      .trim();
     if (!textToSpeak) { isPlayingTTS.value = false; playNextTTS(); return; }
 
     try {
@@ -116,6 +124,8 @@ export function useTTS() {
         url.searchParams.append('prompt_text', emo.text || '');
         url.searchParams.append('prompt_lang', config.promptLang || 'zh');
         url.searchParams.append('ref_audio_path', emo.audio || '');
+        // 🌟 [新增]：添加语速参数，默认值为 1.0
+        url.searchParams.append('speed', config.speed || 1.0);
 
         // 🌟 发起请求
         currentAudio = new Audio(url.toString());

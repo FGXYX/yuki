@@ -384,6 +384,7 @@ const addNewTts = async () => {
     name: '新语音配置', 
     engineType: 'gpt-sovits', 
     apiUrl: 'http://127.0.0.1:9880',
+    speed: 1.0, 
     apiKey: '',
     voiceId: '',
     gptWeightPath: '', sovitsWeightPath: '', refAudioPath: '',
@@ -838,7 +839,24 @@ onMounted(async () => {
               </div>
               <div class="page-header-flex" style="gap: 16px; margin-bottom: 0;">
                 <div class="input-field" style="flex: 1;"><label>参考音频语种</label><select v-model="editingTts.promptLang" @change="saveTtsConfig"><option value="zh">中文</option><option value="ja">日文</option><option value="en">英文</option></select></div>
-                <div class="input-field" style="flex: 1;"><label>合成语种</label><select v-model="editingTts.textLang" @change="saveTtsConfig"><option value="zh">中文</option><option value="ja">日文</option><option value="en">英文</option><option value="all_zh">中英混合</option><option value="all_ja">日英混合</option></select></div>
+                <div class="input-field" style="flex: 1;"><label>合成语种</label><select v-model="editingTts.textLang" @change="saveTtsConfig"><option value="zh">中文</option><option value="ja">日文</option><option value="en">英文</option><option value="all_zh">中英混合</option><option value="all_ja">日英混合</option><option value="auto">中日英三者混合 (自动识别)</option></select></div>
+              </div>
+
+              <div class="input-field" style="margin-top: 16px;">
+                <div class="flex-label">
+                  <label>语速调节 (Speed Factor)</label>
+                  <span class="val-badge">{{ editingTts.speed || 1.0 }}x</span>
+                </div>
+                <input 
+                  type="range" 
+                  class="theme-slider" 
+                  v-model.number="editingTts.speed" 
+                  min="0.5" 
+                  max="2.0" 
+                  step="0.1" 
+                  @change="saveTtsConfig"
+                />
+                <div class="range-marks"><span>慢 (0.5x)</span><span>标准 (1.0x)</span><span>快 (2.0x)</span></div>
               </div>
 
               <div class="divider-line" style="margin: 24px 0;"></div>

@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// ============================================================================
-// 1. 模块引入 (Imports)
-// ============================================================================
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { initDB, clearHistoryDB } from '@/core/Database';
 import { ConfigStore } from '@/core/ConfigStore';

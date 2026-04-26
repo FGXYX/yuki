@@ -193,9 +193,15 @@ export function useChat() {
         });
       }
 
-      // 处理 MCP 工具提示词 (原有的逻辑)
       if (tools.length > 0) {
-        systemPrompt += `\n\n【⚠️ 核心技能系统指令】\n你已经连接了主人的本地系统... (略)`;
+        systemPrompt += `
+      \n\n【系统底层协议：MCP 工具接入】
+      你当前已连接本地 MCP 节点。检测到可用工具：
+      ${tools.map(t => `- ${t.name}: ${t.description}`).join('\n')}
+
+      技术规范：
+      - 发起调用必须严格遵循格式：<tool_call>{"name": "...", "args": {...}}</tool_call>
+      - 严禁猜测工具结果。`;
       }
 
       const activeSessionId = await ConfigStore.get<string>('yuki_active_session', 'default');
