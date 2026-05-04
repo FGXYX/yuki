@@ -169,7 +169,7 @@ export function useTTS() {
           resolve(); 
         };
 
-        audio.onerror = (e) => {
+        audio.onerror = () => {
           currentAudio = null;
           reject(new Error('音频加载或播放失败'));
         };

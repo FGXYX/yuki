@@ -99,8 +99,6 @@ export function useRecorder() {
   let maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
   let onSentenceFinished: ((wav: Uint8Array) => void) | null = null;
 
-  let frameCount = 0;
-
   // ==========================================
   // 3. 原子操作：真正的录音启停
   // ==========================================

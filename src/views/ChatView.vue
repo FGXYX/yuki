@@ -181,7 +181,6 @@ const handleAttachMedia = async () => {
 }
 
 // ── 背景图片上传 ──
-const fileInputRef = ref<HTMLInputElement | null>(null)
 const handleImageUpload = (event: Event) => {
   const file = (event.target as HTMLInputElement).files?.[0]
   if (!file) return

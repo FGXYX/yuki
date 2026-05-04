@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { emit } from '@tauri-apps/api/event'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { join, appDataDir } from '@tauri-apps/api/path'
