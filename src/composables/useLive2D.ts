@@ -1,6 +1,7 @@
 // src/composables/useLive2D.ts
 import { ref, computed } from 'vue';
 import { Live2DManager } from '@/core/Live2DManager';
+import { ConfigStore } from '@/core/ConfigStore';
 import { listen } from '@tauri-apps/api/event';
 
 export function useLive2D() {
@@ -8,9 +9,8 @@ export function useLive2D() {
   const live2dCanvas = ref<HTMLCanvasElement | null>(null);
   let manager: Live2DManager | null = null;
   
-  const isModelManagerOpen = ref(false); // 换装微调面板的开关
-
-  const isModelHidden = ref(false);      // 虚化穿透时的隐藏状态
+  const isModelManagerOpen = ref(false);
+  const isModelHidden = ref(false);
 
   // 模型与换装数据
   const modelRegistry = ref([{ id: 'default_1', name: '默认常服', path: 'ele_a0/model.model3.json', defScale: 0.1, defX: 0, defY: 0 }]);
@@ -18,43 +18,58 @@ export function useLive2D() {
   const activeModel = computed(() => modelRegistry.value.find(m => m.id === currentModelId.value) || modelRegistry.value[0]);
 
   // ================== 2. 核心方法 ==================
-  
-  // 提供给外部获取 manager 实例的入口（比如动作面板需要用到）
   const getManager = () => manager;
 
-  const loadRegistry = () => { /* 预留的 localStorage 逻辑，目前在 setupModelChangeListener 中动态获取 */ };
+  const loadRegistry = async () => {
+    const saved = await ConfigStore.get<any[]>('yuki_models', []);
+    if (saved.length > 0) {
+      modelRegistry.value = saved;
+    }
+    const activeId = await ConfigStore.get<string>('yuki_active_id', 'default_1');
+    currentModelId.value = activeId;
+  };
   
-  const saveRegistry = () => { 
-    localStorage.setItem('yuki_models', JSON.stringify(modelRegistry.value)); 
-    localStorage.setItem('yuki_active_id', currentModelId.value); 
+  const saveRegistry = async () => {
+    await ConfigStore.set('yuki_models', modelRegistry.value);
+    await ConfigStore.set('yuki_active_id', currentModelId.value);
   };
 
-  const onScaleChange = () => { manager?.setScale(activeModel.value.defScale); saveRegistry(); };
-  const onPosChange = () => { manager?.setPosition(activeModel.value.defX, activeModel.value.defY); saveRegistry(); };
+  const onScaleChange = async () => { manager?.setScale(activeModel.value.defScale); await saveRegistry(); };
+  const onPosChange = async () => { manager?.setPosition(activeModel.value.defX, activeModel.value.defY); await saveRegistry(); };
 
-  // 🌟 初始化引擎与开机问候
+  /**
+   * 初始化引擎与开机问候
+   */
   const initEngine = async (triggerSpeechBubble: Function) => {
     if (!live2dCanvas.value) return;
     
     manager = new Live2DManager(live2dCanvas.value);
     
-    const activeId = localStorage.getItem('yuki_active_id');
-    const savedModelsStr = localStorage.getItem('yuki_models');
+    const activeId = await ConfigStore.get<string>('yuki_active_id', '');
+    const savedModels = await ConfigStore.get<any[]>('yuki_models', []);
     
-    if (activeId && savedModelsStr) {
-      const savedModels = JSON.parse(savedModelsStr);
+    if (activeId && savedModels.length > 0) {
       const targetModel = savedModels.find((m: any) => m.id === activeId);
+      
       if (targetModel && manager) {
-        await manager.loadModel(targetModel.path, targetModel.defScale, targetModel.defX, targetModel.defY);
-        setTimeout(() => { triggerSpeechBubble("主人，欢迎回来！有什么吩咐吗？"); }, 1000);
+        try {
+          await manager.loadModel(targetModel.path, targetModel.defScale, targetModel.defX, targetModel.defY);
+          setTimeout(() => { triggerSpeechBubble("主人，欢迎回来！有什么吩咐吗？"); }, 1000);
+        } catch (error) {
+          console.error("初始模型加载失败:", error);
+          manager.clearModel();
+          triggerSpeechBubble("哎呀... 启动时没能叫醒 Yuki，模型文件好像出错了。");
+        }
       }
     } else {
       manager.clearModel();
     }
   };
 
-  // 🌟 监听来自设置中心的“换装”广播
-  const setupModelChangeListener = async (unlisteners: any[]) => {
+  /**
+   * 监听换装广播
+   */
+  const setupModelChangeListener = async (unlisteners: any[], triggerSpeechBubble?: Function) => {
     unlisteners.push(
       await listen('yuki-model-changed', async (event) => {
         const newModelId = event.payload as string;
@@ -64,18 +79,26 @@ export function useLive2D() {
           return; 
         }
 
-        const savedModelsStr = localStorage.getItem('yuki_models');
-        if (savedModelsStr) {
-          const savedModels = JSON.parse(savedModelsStr);
+        const savedModels = await ConfigStore.get<any[]>('yuki_models', []);
+        if (savedModels.length > 0) {
           const targetModel = savedModels.find((m: any) => m.id === newModelId);
 
           if (targetModel && manager) { 
-            await manager.loadModel(
-              targetModel.path, 
-              targetModel.defScale || 0.1, 
-              targetModel.defX || 0, 
-              targetModel.defY || 0
-            );
+            try {
+              await manager.loadModel(
+                targetModel.path, 
+                targetModel.defScale || 0.1, 
+                targetModel.defX || 0, 
+                targetModel.defY || 0
+              );
+              // 同步更新当前选中的模型 ID
+              currentModelId.value = newModelId;
+            } catch (error) {
+              console.error("换装失败:", error);
+              if (triggerSpeechBubble) {
+                triggerSpeechBubble("呜呜，这件衣服好像弄脏（损坏）了，换不上去了...");
+              }
+            }
           }
         }
       })

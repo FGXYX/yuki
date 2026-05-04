@@ -200,6 +200,21 @@ export function useChat() {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiConfig.apiKey}` },
         body: JSON.stringify(requestBody)
       });
+
+      // --- 新增：HTTP 状态码预检 ---
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const status = response.status;
+        let detail = errorData.error?.message || response.statusText;
+        
+        // 记录到系统日志
+        addLog('error', 'API_Response', `请求失败 [${status}]: ${detail}`);
+        
+        // 抛出特定错误供外部 catch 捕获
+        if (status === 401) throw new Error("API_KEY_INVALID");
+        if (status === 429) throw new Error("RATE_LIMIT_REACHED");
+        throw new Error(`SERVER_ERROR_${status}`);
+      }
       
       const reader = response.body?.getReader();
       const decoder = new TextDecoder('utf-8');
@@ -260,7 +275,14 @@ export function useChat() {
                 triggerRef(chatHistory);
                 if (/[。！？\n]/.test(token)) { speakSentence(sentenceBuffer, currentEmotion.value); sentenceBuffer = ''; }
               }
-            } catch (e) {}
+            } catch (e) {
+              // --- 改进：记录解析失败的行，但不中断整个循环 ---
+              // 过滤掉已知的非 JSON 内容，其余报错
+              if (!line.includes('keep-alive')) {
+                addLog('warning', 'Stream_Parser', `非法数据行: "${line.slice(0, 60)}..." | 错误: ${e}`);
+              }
+              continue;
+            }
           }
         }
       }
@@ -364,7 +386,22 @@ export function useChat() {
       triggerSpeechBubble(assistantMsg.content, displayTime);
       setTimeout(() => { currentEmotion.value = 'normal'; }, displayTime);
 
-    } catch (err: any) { addLog('error', 'Network', `LLM Error: ${err.message}`); }
+    } catch (err: any) {
+      addLog('error', 'Chat_Logic', `对话中断: ${err.message}`);
+      
+      let feedback = "唔... 感觉大脑断网了，主人能检查一下配置吗？";
+      currentEmotion.value = 'shame'; // 切换到尴尬或困扰的表情
+
+      if (err.message === "API_KEY_INVALID") {
+        feedback = "主人，API Key 好像失效了，去设置里看看吧？";
+      } else if (err.message === "RATE_LIMIT_REACHED") {
+        feedback = "呼... 说得太快了，歇一会儿再聊吧。";
+      } else if (err.name === 'AbortError') {
+        feedback = "这次思考太久了，我有点累了...";
+      }
+
+      triggerSpeechBubble(feedback, 6000); // UI 气泡反馈
+    }
   };
 
   // 🌟 [修正点]：彻底补回生命周期逻辑

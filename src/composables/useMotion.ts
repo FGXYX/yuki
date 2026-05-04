@@ -1,6 +1,7 @@
 // src/composables/useMotion.ts
 import { ref } from 'vue';
 import { MotionAliasStore } from '@/core/MotionAliasStore';
+import { ConfigStore } from '@/core/ConfigStore';
 
 export function useMotion() {
   // ================== 1. 状态定义 ==================
@@ -25,11 +26,10 @@ export function useMotion() {
       currentMotions.value = manager.getMotionList();
       
       let targetModelUrl = 'default_model';
-      const activeId = localStorage.getItem('yuki_active_id');
-      const modelsStr = localStorage.getItem('yuki_models');
+      const activeId = await ConfigStore.get<string>('yuki_active_id', '');
+      const models = await ConfigStore.get<any[]>('yuki_models', []);
       
-      if (activeId && modelsStr) {
-        const models = JSON.parse(modelsStr);
+      if (activeId && models.length > 0) {
         const currentModel = models.find((m: any) => m.id === activeId);
         if (currentModel && currentModel.path) {
           targetModelUrl = currentModel.path;
@@ -45,7 +45,7 @@ export function useMotion() {
       isActionListOpen.value = true;
       isEditingActions.value = false; 
       
-      closeMenuFn(); // 执行外部传进来的关菜单回调
+      closeMenuFn();
 
     } catch (err: any) {
       console.error("❌ 动作面板崩溃:", err);
@@ -57,7 +57,7 @@ export function useMotion() {
   const toggleActionEditMode = () => {
     if (isEditingActions.value) {
       isEditingActions.value = false;
-      editingAliases.value = { ...savedAliases.value }; // 取消时覆盖回原样
+      editingAliases.value = { ...savedAliases.value };
     } else {
       isEditingActions.value = true;
     }

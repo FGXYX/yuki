@@ -7,15 +7,33 @@ use std::fs;
 use std::process::Command as StdCommand;
 use std::process::Stdio;
 use std::thread;
-use std::time::Duration;
+use std::time::Duration as StdDuration;
 use tauri::Emitter;
 use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command as AsyncCommand;
+use tokio::time::{timeout, Duration as TokioDuration};
 
 // ============================================================================
-// 🌟 语音转文字模块 (保持不变)
+// 🌟 辅助宏：处理带超时的异步读取，解决 FnMut 闭包生命周期问题
+// ============================================================================
+macro_rules! read_line_timeout {
+    ($reader:expr, $config_name:expr, $timeout_secs:expr) => {
+        {
+            let mut line = String::new();
+            match timeout(TokioDuration::from_secs($timeout_secs), $reader.read_line(&mut line)).await {
+                Ok(Ok(0)) => Err(format!("插件 [{}] 意外关闭 (EOF)", $config_name)),
+                Ok(Ok(_)) => Ok(line),
+                Ok(Err(e)) => Err(format!("读取插件 [{}] 输出失败: {}", $config_name, e)),
+                Err(_) => Err(format!("插件 [{}] 响应超时 ({}s)", $config_name, $timeout_secs)),
+            }
+        }
+    };
+}
+
+// ============================================================================
+// 🌟 语音转文字模块 (Whisper STT)
 // ============================================================================
 #[tauri::command]
 async fn transcribe_audio(app: tauri::AppHandle, audio_bytes: Vec<u8>) -> Result<String, String> {
@@ -38,7 +56,9 @@ async fn transcribe_audio(app: tauri::AppHandle, audio_bytes: Vec<u8>) -> Result
         resource_dir.join("resources").join("ggml-base.bin")
     };
 
-    if !final_model_path.exists() { return Err(format!("【文件丢失】找不到模型: {:?}", final_model_path)); }
+    if !final_model_path.exists() { 
+        return Err(format!("【文件丢失】找不到模型: {:?}", final_model_path)); 
+    }
 
     let (success, stderr_str) = if dev_exe_path.exists() {
         let out = StdCommand::new(&dev_exe_path)
@@ -66,18 +86,19 @@ async fn transcribe_audio(app: tauri::AppHandle, audio_bytes: Vec<u8>) -> Result
     }
 }
 
+// ============================================================================
+// 🌟 MCP 插件模块 (Model Context Protocol)
+// ============================================================================
 
-// 🌟 1. 定义 MCP 配置结构体 (补上了 env 字段！)
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 struct McpConfig {
     name: String,
     command: String,
     args: Vec<String>,
-    env: Option<std::collections::HashMap<String, String>>, // 👈 核心：接收前端传来的环境变量
+    env: Option<std::collections::HashMap<String, String>>,
     enabled: bool,
 }
 
-// 🌟 2. 获取所有已启用 MCP 插件的合集工具
 #[tauri::command]
 async fn get_all_mcp_tools(configs: Vec<McpConfig>) -> Result<String, String> {
     let mut all_llm_tools = Vec::new();
@@ -88,7 +109,6 @@ async fn get_all_mcp_tools(configs: Vec<McpConfig>) -> Result<String, String> {
         let mut cmd = AsyncCommand::new(&config.command);
         cmd.args(&config.args);
         
-        // 👈 核心：把前端配置的环境变量，强行注入给 Node.js 进程
         if let Some(env_map) = &config.env {
             cmd.envs(env_map); 
         }
@@ -104,19 +124,20 @@ async fn get_all_mcp_tools(configs: Vec<McpConfig>) -> Result<String, String> {
         let stdout = child.stdout.take().unwrap();
         let mut reader = BufReader::new(stdout);
 
+        // 简化的 initialize 握手获取工具列表
         let init_req = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": { "name": "Yuki", "version": "1.0" } } });
-        stdin.write_all(format!("{}\n", init_req).as_bytes()).await.ok();
+        let _ = stdin.write_all(format!("{}\n", init_req).as_bytes()).await;
         let mut line = String::new();
-        reader.read_line(&mut line).await.ok();
+        let _ = reader.read_line(&mut line).await;
         
         let notif = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
-        stdin.write_all(format!("{}\n", notif).as_bytes()).await.ok();
+        let _ = stdin.write_all(format!("{}\n", notif).as_bytes()).await;
 
         let tools_req = json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" });
-        stdin.write_all(format!("{}\n", tools_req).as_bytes()).await.ok();
+        let _ = stdin.write_all(format!("{}\n", tools_req).as_bytes()).await;
 
         let mut tools_line = String::new();
-        reader.read_line(&mut tools_line).await.ok();
+        let _ = reader.read_line(&mut tools_line).await;
 
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&tools_line) {
             if let Some(tools) = parsed["result"]["tools"].as_array() {
@@ -139,11 +160,13 @@ async fn get_all_mcp_tools(configs: Vec<McpConfig>) -> Result<String, String> {
     Ok(serde_json::to_string(&all_llm_tools).unwrap())
 }
 
-// 🌟 3. 动态调度执行 MCP 技能
 #[tauri::command]
 async fn execute_mcp_tool(tool_name: String, tool_args: String, configs: Vec<McpConfig>) -> Result<String, String> {
     println!("⚙️ 准备执行 MCP 技能: {}", tool_name);
-    let args_json: serde_json::Value = serde_json::from_str(&tool_args).unwrap_or(json!({}));
+    
+    // 参数预解析
+    let args_json: serde_json::Value = serde_json::from_str(&tool_args)
+        .map_err(|e| format!("参数格式错误: {}", e))?;
 
     for config in configs {
         if !config.enabled { continue; }
@@ -151,72 +174,92 @@ async fn execute_mcp_tool(tool_name: String, tool_args: String, configs: Vec<Mcp
         let mut cmd = AsyncCommand::new(&config.command);
         cmd.args(&config.args);
         
-        // 👈 核心：执行时同样需要注入环境变量
         if let Some(env_map) = &config.env {
             cmd.envs(env_map); 
         }
 
-        let mut child = match cmd
-            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
-            .spawn() {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
+        let mut child = cmd
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("无法启动插件进程: {}", e))?;
 
         let mut stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
-        let mut reader = BufReader::new(stdout);
-
-        let init_req = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": { "name": "Yuki", "version": "1.0" } } });
-        stdin.write_all(format!("{}\n", init_req).as_bytes()).await.ok();
-        let mut dummy = String::new();
-        reader.read_line(&mut dummy).await.ok();
+        let stderr = child.stderr.take().unwrap();
         
-        let notif = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
-        stdin.write_all(format!("{}\n", notif).as_bytes()).await.ok();
+        let mut reader = BufReader::new(stdout);
+        let mut err_reader = BufReader::new(stderr);
 
+        // --- MCP 握手流程 ---
+        
+        // 1. Initialize
+        let init_req = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": { "name": "Yuki", "version": "1.0" } } });
+        let _ = stdin.write_all(format!("{}\n", init_req).as_bytes()).await;
+        if let Err(_) = read_line_timeout!(reader, config.name, 5) {
+            let _ = child.kill().await; continue; 
+        }
+        
+        // 2. Initialized
+        let notif = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
+        let _ = stdin.write_all(format!("{}\n", notif).as_bytes()).await;
+
+        // 3. Tools List
         let tools_req = json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" });
-        stdin.write_all(format!("{}\n", tools_req).as_bytes()).await.ok();
-        let mut tools_line = String::new();
-        reader.read_line(&mut tools_line).await.ok();
+        let _ = stdin.write_all(format!("{}\n", tools_req).as_bytes()).await;
+        
+        let tools_line = match read_line_timeout!(reader, config.name, 5) {
+            Ok(l) => l,
+            Err(_) => { let _ = child.kill().await; continue; }
+        };
 
         let mut owns_tool = false;
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&tools_line) {
             if let Some(tools) = parsed["result"]["tools"].as_array() {
-                for tool in tools {
-                    if tool["name"].as_str() == Some(&tool_name) {
-                        owns_tool = true;
-                        break;
-                    }
-                }
+                owns_tool = tools.iter().any(|t| t["name"].as_str() == Some(&tool_name));
             }
         }
 
+        // --- 执行工具调用 ---
         if owns_tool {
             let call_req = json!({
-                "jsonrpc": "2.0",
-                "id": 3,
-                "method": "tools/call",
-                "params": {
-                    "name": tool_name,
-                    "arguments": args_json
-                }
+                "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                "params": { "name": tool_name, "arguments": args_json }
             });
 
-            stdin.write_all(format!("{}\n", call_req).as_bytes()).await.map_err(|e| e.to_string())?;
+            let _ = stdin.write_all(format!("{}\n", call_req).as_bytes()).await;
 
-            let mut result_line = String::new();
-            reader.read_line(&mut result_line).await.map_err(|e| e.to_string())?;
-
-            let _ = child.kill().await;
-            return Ok(result_line);
+            match read_line_timeout!(reader, config.name, 30) {
+                Ok(result_line) => {
+                    let _ = child.kill().await;
+                    // 检查业务错误
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&result_line) {
+                        if let Some(err) = parsed.get("error") {
+                            return Err(format!("插件返回逻辑错误: {}", err));
+                        }
+                    }
+                    return Ok(result_line);
+                }
+                Err(e) => {
+                    // 尝试从 stderr 读取崩溃信息
+                    let mut err_msg = String::new();
+                    let _ = timeout(TokioDuration::from_millis(300), err_reader.read_line(&mut err_msg)).await;
+                    let _ = child.kill().await;
+                    return Err(format!("{}; 原始错误: {}", e, err_msg));
+                }
+            }
         }
 
         let _ = child.kill().await;
     }
 
-    Err(format!("在所有已启用的插件中，都找不到名为 '{}' 的技能", tool_name))
+    Err(format!("在启用的插件中找不到名为 '{}' 的工具", tool_name))
 }
+
+// ============================================================================
+// 🌟 Tauri 应用启动
+// ============================================================================
 
 fn main() {
     tauri::Builder::default()
@@ -224,12 +267,13 @@ fn main() {
         .setup(|app| {
             let app_handle = app.handle().clone();
 
+            // 全局鼠标位置广播任务
             thread::spawn(move || {
                 let device_state = DeviceState::new();
                 loop {
                     let mouse = device_state.get_mouse();
                     let _ = app_handle.emit("global-mouse-move", (mouse.coords.0, mouse.coords.1));
-                    thread::sleep(Duration::from_millis(32));
+                    thread::sleep(StdDuration::from_millis(32));
                 }
             });
 
@@ -240,12 +284,11 @@ fn main() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
-        // 🌟 注册最新的三个指令
         .invoke_handler(tauri::generate_handler![
             transcribe_audio, 
             get_all_mcp_tools, 
             execute_mcp_tool
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("运行 Yuki Tauri 应用时出错");
 }

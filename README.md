@@ -20,7 +20,8 @@
 
 这是一个充满热情的个人项目，旨在探索 **AI 与桌面交互**的无限可能。我希望通过这个项目，让冰冷的技术变得有温度，让每一个使用者都能感受到来自虚拟伙伴的陪伴。
 
-**Yuki** 是一款基于 **Tauri v2 + Vue 3 + Rust** 构建的桌面级 AI 虚拟伴侣应用。它将大语言模型 (LLM) 的自然交互能力与 Live2D 动态渲染技术深度融合，为用户提供具备情绪反馈、语音交互和智能动作联动的沉浸式桌面陪伴体验。
+> **Yuki** 是一款基于 **Tauri v2 + Vue 3 + Rust** 构建的桌面级 AI 虚拟伴侣应用。它将大语言模型 (LLM) 的自然交互能力与 Live2D 动态渲染技术深度融合，为用户提供具备情绪反馈、语音交互和智能动作联动的沉浸式桌面陪伴体验。
+>
 
 ![](https://i.ibb.co/WW0pRm00/2026-04-19-111712.png)
 
@@ -479,23 +480,48 @@ yuki/
 │   ├── composables/              # 组合式逻辑封装（大脑神经元）
 │   │   ├── useChat.ts            # LLM 请求管理、对话历史与情绪解析
 │   │   ├── useConsole.ts         # 开发者控制台与日志系统（含崩溃保护）
-│   │   ├── useLive2D.ts          # PixiJS 上下文与模型生命周期
-│   │   ├── useMotion.ts          # 动作配置流转与别名映射
-│   │   ├── useRecorder.ts        # VAD 引擎、WAV 编码与 15s 防死锁
-│   │   ├── useTTS.ts             # 流式语音合成与批量更新优化
+│   │   ├── useLive2D.ts          # PixiJS 上下文与模型生命周期（配置已迁移到 ConfigStore）
+│   │   ├── useMotion.ts          # 动作配置流转与别名映射（配置已迁移到 ConfigStore）
+│   │   ├── useRecorder.ts        # VAD 引擎、WAV 编码与可配置阈值（15s 防死锁）
+│   │   ├── useTTS.ts             # 流式语音合成、批量更新优化、多引擎支持
 │   │   └── useTheme.ts           # 动态主题系统与样式注入
 │   │
 │   ├── core/                     # 底层工具类与实例封装（骨架）
 │   │   ├── AudioEncoder.ts       # WAV 音频编码器（PCM → WAV）
-│   │   ├── ConfigStore.ts        # Tauri Store 插件封装
-│   │   ├── Database.ts           # SQLite 数据库封装（含索引优化）
+│   │   ├── ConfigStore.ts        # Tauri Store 插件封装（统一持久化入口）
+│   │   ├── Database.ts           # SQLite 数据库（单实例，含事务保护的归档）
 │   │   ├── Live2DManager.ts      # Live2D 渲染控制器（含纹理释放）
 │   │   └── MotionAliasStore.ts   # 动作别名持久化管理
 │   │
 │   ├── views/                    # UI 视图层（皮肤与交互）
-│   │   ├── MainView.vue          # 主视图：Live2D 画布、语音呼吸灯、穿透逻辑
-│   │   ├── SettingsView.vue      # 设置面板：API 配置、模型选择、参数调节
-│   │   ├── ChatView.vue          # 独立聊天窗口：对话流与历史记录
+│   │   ├── MainView.vue          # 主视图骨架：Live2D 画布、呼吸灯、穿透逻辑
+│   │   ├── main/                 # MainView 子组件
+│   │   │   ├── SpeechBubble.vue       # 语音气泡与字幕
+│   │   │   ├── ModelTuningModal.vue   # 模型参数实时调节
+│   │   │   ├── ControlPanel.vue       # 快捷控制面板
+│   │   │   ├── ChatOverlay.vue        # 快捷聊天覆盖层
+│   │   │   └── ActionPanelModal.vue   # 动作触发面板
+│   │   │
+│   │   ├── SettingsView.vue      # 设置面板骨架：侧边栏导航 + 子路由
+│   │   ├── settings/             # SettingsView 子组件（7 个独立面板）
+│   │   │   ├── AiProviderSettings.vue  # AI 引擎管理（多服务商）
+│   │   │   ├── TtsSettings.vue         # 语音合成引擎配置（GPT-SoVITS / OpenAI）
+│   │   │   ├── ModelSettings.vue       # Live2D 模型库管理
+│   │   │   ├── EmotionLinkSettings.vue # 情绪-动作联动规则
+│   │   │   ├── PersonaSettings.vue     # 人格设定（System Prompt）
+│   │   │   ├── ThemeSettings.vue       # 个性化外观主题
+│   │   │   └── ... (更多面板可扩展)
+│   │   │
+│   │   ├── ChatView.vue          # 独立聊天窗口骨架：对话流、主题、MCP
+│   │   ├── chat/                 # ChatView 子组件（8 个独立模块）
+│   │   │   ├── MessageBubble.vue      # 聊天气泡（AI/用户区分）
+│   │   │   ├── ChatInput.vue          # 输入框与快捷操作
+│   │   │   ├── MessageList.vue        # 消息虚拟滚动列表
+│   │   │   ├── SessionSidebar.vue     # 会话侧边栏管理
+│   │   │   ├── ThemePanel.vue         # 聊天窗口主题
+│   │   │   ├── McpPanel.vue           # MCP 插件面板
+│   │   │   └── SkillPanel.vue         # Agent Skill 面板
+│   │   │
 │   │   └── ConsoleView.vue       # 开发者控制台：实时日志与调试信息
 │   │
 │   ├── App.vue                   # 路由分发与全局布局

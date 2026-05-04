@@ -2,6 +2,7 @@ import * as PIXI from 'pixi.js';
 import { Live2DModel } from 'pixi-live2d-display/cubism4';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
+import { emit } from '@tauri-apps/api/event';
 
 const appWindow = getCurrentWindow();
 (window as any).PIXI = PIXI;
@@ -36,44 +37,62 @@ export class Live2DManager {
   // 🌟 修改点：支持传入 scale, x, y
   public async loadModel(modelUrl: string, scale: number, x: number, y: number) {
     try {
-      // 🌟 性能优化：切换模型前，深度销毁旧模型并释放显存
-      if (this.currentModel) {
-        try {
-          this.app.stage.removeChild(this.currentModel);
-          // ⚠️ 传入 { children: true, texture: true, baseTexture: true } 强制清空贴图内存！
-          this.currentModel.destroy({ children: true, texture: true, baseTexture: true });
-        } catch (e) {
-          console.warn("销毁旧模型时跳过异常:", e);
-        }
-        this.currentModel = null; 
-        
-        // 顺手清理一下 PixiJS 的全局纹理缓存缓存垃圾
-        PIXI.utils.clearTextureCache();
+      // 1. 预检查：如果路径为空，直接清理并跳过
+      if (!modelUrl) {
+        this.clearModel();
+        return;
       }
 
-      const model = await Live2DModel.from(modelUrl);
+      // 2. 深度清理：无论新模型是否加载成功，先释放旧模型占用的 WebGL 纹理
+      this.clearModel();
+
+      // 3. 执行加载：这是最容易报错的地方（网络、文件损坏、格式不支持）
+      const model = await Live2DModel.from(modelUrl).catch(err => {
+        // 捕获 Pixi-Live2D 内部的加载错误
+        throw new Error(`Pixi渲染引擎错误: ${err.message || '模型解析失败'}`);
+      });
+
       this.currentModel = model;
 
-      // 🌟 应用传入的初始参数
+      // 4. 应用配置
       model.scale.set(scale);
       model.x = x;
       model.y = y;
 
+      // 5. 挂载到舞台
       this.app.stage.addChild(model);
       console.log(`✅ 模型加载成功: ${modelUrl}`);
 
       model.interactive = true;
       model.cursor = 'default';
 
+      // 6. 注册鼠标追踪（仅在模型存在时）
       listen('global-mouse-move', (event) => {
+        if (!this.currentModel) return; // 兜底检查
         const [globalX, globalY] = event.payload as [number, number];
         const localX = (globalX - this.windowX) / window.devicePixelRatio;
         const localY = (globalY - this.windowY) / window.devicePixelRatio;
-        model.focus(localX, localY);
+        this.currentModel.focus(localX, localY);
       });
 
-    } catch (error) {
-      console.error('❌ 模型加载失败:', error);
+    } catch (error: any) {
+      // --- 🌟 兜底环节 🌟 ---
+      
+      // A. 终端记录
+      console.error('❌ [Live2DManager] 资源加载灾难:', error);
+
+      // B. 彻底清理环境，防止出现半加载状态的残留纹理
+      this.clearModel();
+
+      // C. 广播错误给前端 (SettingsView 或 MainView 接收)
+      // 用户可以在 UI 上看到类似 "模型文件已损坏" 的提示
+      await emit('yuki-model-load-error', {
+        path: modelUrl,
+        message: error.message || '未知渲染错误'
+      });
+
+      // D. 抛出异常，让调用它的 composable (useLive2D) 也能感知
+      throw error; 
     }
   }
 
