@@ -3,7 +3,7 @@
 // 提供结构化数据模型、文件加载、智能注入、导入导出
 
 import { ConfigStore } from '@/core/ConfigStore'
-import { readTextFile, readDir, writeTextFile, mkdir, exists, BaseDirectory } from '@tauri-apps/plugin-fs'
+import { readTextFile, readDir, writeTextFile, mkdir, exists } from '@tauri-apps/plugin-fs'
 import { appDataDir, join } from '@tauri-apps/api/path'
 
 // ─── 数据模型 ───────────────────────────────────────────────

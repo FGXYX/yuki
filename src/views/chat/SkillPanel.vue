@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import type { AgentSkill } from '@/core/SkillManager'
 
 // 预置分类色板
@@ -38,15 +38,6 @@ const categoryGroups = computed(() => {
   return groups
 })
 
-const fileGroups = computed(() => {
-  const groups: Record<string, AgentSkill[]> = {}
-  for (const s of props.fileSkills) {
-    const cat = s.category || 'general'
-    if (!groups[cat]) groups[cat] = []
-    groups[cat].push(s)
-  }
-  return groups
-})
 
 // ── 新增 ──
 const addNew = () => {

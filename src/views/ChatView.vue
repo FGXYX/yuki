@@ -6,7 +6,7 @@ import { useChat } from '@/composables/useChat'
 import { useTTS } from '@/composables/useTTS'
 import { open } from '@tauri-apps/plugin-dialog'
 import { convertFileSrc } from '@tauri-apps/api/core'
-import { loadAllSkills, exportSkillToFile, parseSkillFile, saveLocalSkills } from '@/core/SkillManager'
+import { loadAllSkills, exportSkillToFile, parseSkillFile } from '@/core/SkillManager'
 import type { AgentSkill } from '@/core/SkillManager'
 
 // ── 子组件 ──
