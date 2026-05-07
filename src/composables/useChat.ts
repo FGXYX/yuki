@@ -12,6 +12,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { exists, mkdir, BaseDirectory } from '@tauri-apps/plugin-fs';
 import { appDataDir, join } from '@tauri-apps/api/path';
 
+import { smartFilterSkills, buildSkillPrompt } from '@/core/SkillManager';
+
 export function useChat() {
   const isChatInputOpen = ref(false); 
   const isSpeaking = ref(false);      
@@ -147,10 +149,9 @@ export function useChat() {
       } catch (e) { addLog('warning', 'MCP', '加载工具失败'); }
 
       let systemPrompt = (persona?.prompt || basePrompt) + emotionInstruction;
-      const activeSkills = agentSkills.value.filter(s => s.enabled);
+      const activeSkills = smartFilterSkills(agentSkills.value, text);
       if (activeSkills.length > 0) {
-        systemPrompt += `\n\n【核心 Skill SOP】\n`;
-        activeSkills.forEach(s => systemPrompt += `>>> ${s.name} <<<\n${s.content}\n`);
+        systemPrompt += buildSkillPrompt(activeSkills);
       }
 
       const activeSessionId = await ConfigStore.get<string>('yuki_active_session', 'default');

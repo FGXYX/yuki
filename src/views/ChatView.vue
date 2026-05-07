@@ -6,6 +6,8 @@ import { useChat } from '@/composables/useChat'
 import { useTTS } from '@/composables/useTTS'
 import { open } from '@tauri-apps/plugin-dialog'
 import { convertFileSrc } from '@tauri-apps/api/core'
+import { loadAllSkills, exportSkillToFile, parseSkillFile, saveLocalSkills } from '@/core/SkillManager'
+import type { AgentSkill } from '@/core/SkillManager'
 
 // ── 子组件 ──
 import SessionSidebar from './chat/SessionSidebar.vue'
@@ -90,6 +92,9 @@ const {
   sendMessage: coreSendMessage, clearChatHistory, loadChatHistory,
   mcpConfigs, saveMcpConfigs, agentSkills, saveSkills
 } = useChat()
+
+// ── 文件源 Skills ──
+const fileSkills = ref<AgentSkill[]>([])
 
 // ── 侧边栏 & 会话管理 ──
 const isSidebarOpen = ref(true)
@@ -214,22 +219,53 @@ const handleImportSkill = (event: Event) => {
   const reader = new FileReader()
   reader.onload = (e) => {
     const textContent = e.target?.result as string
-    const skillName = file.name.replace(/\.[^/.]+$/, "")
-    agentSkills.value.push({ name: skillName, content: textContent, enabled: true, isExpanded: false })
+    const { metadata, body } = parseSkillFile(textContent)
+    const skillName = metadata.name || file.name.replace(/\.[^/.]+$/, '')
+    agentSkills.value.push({
+      name: skillName,
+      description: metadata.description || '',
+      content: body,
+      category: metadata.category || 'general',
+      tags: metadata.tags || [],
+      priority: metadata.priority || 50,
+      trigger: metadata.trigger || '',
+      enabled: true,
+      isExpanded: false,
+      source: 'local',
+    })
     saveSkills()
     if (skillFileInputRef.value) skillFileInputRef.value.value = ''
   }; reader.readAsText(file, 'utf-8')
 }
 
+// ── Skill 导出 ──
+const handleExportSkill = async (skill: AgentSkill) => {
+  try {
+    const path = await exportSkillToFile(skill)
+    alert(`导出成功: ${path}`)
+  } catch (e) {
+    alert('导出失败: ' + String(e))
+  }
+}
+
+// ── 删除文件源 Skill ──
+const handleDeleteFileSkill = async (idx: number) => {
+  // 文件源 skill 从 UI 中移除即可（不影响磁盘）
+  fileSkills.value.splice(idx, 1)
+}
+
 // 事件处理函数
 const updateMcpConfigs = (val: any[]) => { mcpConfigs.value = val; saveMcpConfigs() }
-const updateAgentSkills = (val: any[]) => { agentSkills.value = val; saveSkills() }
+const updateAgentSkills = (val: AgentSkill[]) => { agentSkills.value = val; saveSkills() }
 
 // ── 生命周期 ──
 onMounted(async () => {
   await initDB()
   await loadSessions()
   await loadChatTheme()
+  // 加载文件源 Skills
+  const { files } = await loadAllSkills()
+  fileSkills.value = files
 })
 onUnmounted(() => { stopTTS() })
 </script>
@@ -323,10 +359,13 @@ onUnmounted(() => { stopTTS() })
 
   <SkillPanel
     :skills="agentSkills"
+    :file-skills="fileSkills"
     :visible="isSkillPanelOpen"
     @close="isSkillPanelOpen = false"
     @update:skills="updateAgentSkills"
     @import-skill="triggerSkillImport"
+    @export-skill="handleExportSkill"
+    @delete-file-skill="handleDeleteFileSkill"
   />
   <input type="file" ref="skillFileInputRef" accept=".md,.txt" style="display:none" @change="handleImportSkill">
 

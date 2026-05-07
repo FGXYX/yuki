@@ -150,7 +150,7 @@ onMounted(async () => {
           <h2>关于 Yuki</h2>
           <p class="desc">桌面级 AI 虚拟伴侣</p>
           <div class="about-card">
-            <p>版本: v1.0.3</p>
+            <p>版本: v1.1.0</p>
             <p>作者: <a href="#" @click.prevent="openGithub">FGXYX ❤️</a></p>
             <p>技术栈: Tauri v2 + Vue 3 + Rust + Live2D</p>
             <p>开源协议: GNU GPLv3</p>
