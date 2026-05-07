@@ -69,3 +69,4 @@ pnp-lock.yaml
 # Temporary files
 tmp/
 temp/flow/
+node_modules.bak/
